@@ -1,35 +1,96 @@
-import React, { useEffect, useState } from 'react';
-import { View, Button, Text } from 'react-native';
-import { Vosk } from 'react-native-vosk';
+import React, { useState, useEffect } from "react";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { Audio } from "expo-av";
 
-export default function VoiceRecorder() {
-  const [isListening, setIsListening] = useState(false);
-  const [text, setText] = useState('');
+const VoiceRecorder = ({ onRecordingComplete }) => {
+  const [recording, setRecording] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioUri, setAudioUri] = useState(null);
 
   useEffect(() => {
-    // Load the Vosk model from assets
-    Vosk.init().then(() => {
-      console.log('Vosk initialized');
-    }).catch((error) => {
-      console.error('Vosk initialization error:', error);
-    });
-  }, []);
+    return () => {
+      if (recording) {
+        recording.stopAndUnloadAsync();
+      }
+    };
+  }, [recording]);
 
-  const startListening = async () => {
-    setIsListening(true);
-    Vosk.start().catch(console.error);
+  // Function to start recording
+  const startRecording = async () => {
+    try {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== "granted") {
+        alert("Permission to access microphone is required!");
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const newRecording = new Audio.Recording();
+      await newRecording.prepareToRecordAsync(Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY);
+      await newRecording.startAsync();
+      setRecording(newRecording);
+      setIsRecording(true);
+    } catch (error) {
+      console.error("Failed to start recording:", error);
+    }
   };
 
-  const stopListening = async () => {
-    setIsListening(false);
-    const result = await Vosk.stop();
-    setText(result.text); // Extracted text from speech
+  // Function to stop recording
+  const stopRecording = async () => {
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setAudioUri(uri);
+      setIsRecording(false);
+      setRecording(null);
+
+      // Pass audio file URI to parent component
+      if (onRecordingComplete) {
+        onRecordingComplete(uri);
+      }
+    } catch (error) {
+      console.error("Failed to stop recording:", error);
+    }
   };
 
   return (
-    <View>
-      <Button title={isListening ? "Stop Listening" : "Start Listening"} onPress={isListening ? stopListening : startListening} />
-      <Text>Transcribed Text: {text}</Text>
+    <View style={styles.container}>
+      <TouchableOpacity 
+        style={[styles.button, isRecording ? styles.recording : styles.notRecording]}
+        onPress={isRecording ? stopRecording : startRecording}
+      >
+        <Text style={styles.text}>{isRecording ? "Stop Recording" : "Start Recording"}</Text>
+      </TouchableOpacity>
+
+      {audioUri && <Text style={styles.text}>Audio Recorded!</Text>}
     </View>
   );
-}
+};
+
+const styles = StyleSheet.create({
+  container: {
+    alignItems: "center",
+    marginTop: 20,
+  },
+  button: {
+    padding: 15,
+    borderRadius: 10,
+    marginVertical: 10,
+  },
+  recording: {
+    backgroundColor: "red",
+  },
+  notRecording: {
+    backgroundColor: "blue",
+  },
+  text: {
+    color: "#fff",
+    fontSize: 16,
+  },
+});
+
+export default VoiceRecorder;
